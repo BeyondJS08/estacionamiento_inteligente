@@ -5,11 +5,11 @@
 #define ECHO_PIN    13
 #define BUZZER_PIN  14
 
-// WiFi Credentials - UPDATED
-const char* ssid = "UltraBJS";
-const char* password = "bjs585426";
+// WiFi Credentials
+const char* ssid = "SSID";
+const char* password = "SSID PASSWORD";
 
-// Server URL - UPDATED to match your new network IP (10.83.211.98)
+// Server URL - UPDATED to match your new network IP
 const char* serverUrl = "http://10.83.211.98:8000/api.php";
 
 // Variables
@@ -87,7 +87,7 @@ void loop() {
     tone(BUZZER_PIN, frecuenciaBuzzer);  // Sound 2000 Hz
   }
   
-  // 5. Show data in serial monitor (also parsed by serial_collector.py)
+  // 5. Show data in serial monitor
   Serial.print("Distancia: ");
   Serial.print(distance);
   Serial.print(" cm  |  Estado: ");
@@ -106,7 +106,7 @@ void loop() {
       WiFiClient client;
       HTTPClient http;
       
-      // Initialize HTTP connection using the WiFiClient explicitly (highly robust)
+      // Initialize HTTP connection using the WiFiClient
       http.begin(client, serverUrl);
       
       // Specify content-type header
