@@ -22,11 +22,11 @@ try {
     $filter_status = isset($_GET['estado']) ? $_GET['estado'] : 'all';
     
     if ($filter_status !== 'all') {
-        $stmt = $pdo->prepare("SELECT * FROM parking_logs WHERE estado = :estado ORDER BY id DESC LIMIT 100");
+        $stmt = $pdo->prepare("SELECT * FROM parking_logs WHERE estado = :estado ORDER BY id DESC LIMIT 5");
         $stmt->execute([':estado' => $filter_status]);
         $logs = $stmt->fetchAll();
     } else {
-        $logs = $pdo->query("SELECT * FROM parking_logs ORDER BY id DESC LIMIT 100")->fetchAll();
+        $logs = $pdo->query("SELECT * FROM parking_logs ORDER BY id DESC LIMIT 5")->fetchAll();
     }
 } catch (PDOException $e) {
     die("Query failed: " . $e->getMessage());
@@ -44,6 +44,10 @@ try {
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- FontAwesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     
     <style>
         :root {
@@ -152,7 +156,7 @@ try {
             100% { transform: scale(0.9); opacity: 0.6; }
         }
 
-        .container {
+        .dashboard-container {
             max-width: 1300px;
             margin: 2rem auto;
             padding: 0 1.5rem;
@@ -404,6 +408,10 @@ try {
             background-color: rgba(239, 68, 68, 0.1);
             color: var(--color-danger);
         }
+        .stat-card:nth-child(5) .stat-icon {
+            background-color: rgba(239, 68, 68, 0.1);
+            color: var(--color-danger);
+        }
 
         .stat-info h3 {
             font-size: 0.85rem;
@@ -604,6 +612,53 @@ try {
             margin-bottom: 1rem;
             opacity: 0.3;
         }
+
+        /* Charts Section */
+        .charts-section {
+            margin-bottom: 2.5rem;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 968px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .chart-card {
+            background-color: var(--bg-secondary);
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+            padding: 1.5rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+        }
+
+        .chart-card h3 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 1.25rem;
+            color: var(--text-primary);
+        }
+
+        .chart-card.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .chart-wrapper {
+            position: relative;
+            height: 280px;
+            width: 100%;
+        }
+
+        .chart-wrapper.small {
+            height: 240px;
+        }
     </style>
 </head>
 <body>
@@ -621,7 +676,7 @@ try {
         </div>
     </header>
 
-    <div class="container">
+    <div class="dashboard-container">
         
         <!-- Parking Hero and Spot Visualizer -->
         <div class="parking-hero">
@@ -726,21 +781,26 @@ try {
         <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-icon">
-                    <i class="fa-solid fa-database"></i>
+                    <i class="fa-solid fa-ruler-horizontal"></i>
                 </div>
                 <div class="stat-info">
-                    <h3>Registros Totales</h3>
-                    <div class="stat-number" id="stat-total-records"><?php echo $total_records; ?></div>
+                    <h3>Distancia Actual</h3>
+                    <div class="stat-number" id="stat-current-distance">
+                        <?php echo $latest_reading ? number_format($latest_reading['distance'], 1) : '0.0'; ?>
+                        <span style="font-size: 1rem; font-weight: 500;">cm</span>
+                    </div>
                 </div>
             </div>
             
             <div class="stat-card">
                 <div class="stat-icon">
-                    <i class="fa-solid fa-ruler-horizontal"></i>
+                    <i class="fa-solid fa-square-parking"></i>
                 </div>
                 <div class="stat-info">
-                    <h3>Promedio Distancia</h3>
-                    <div class="stat-number" id="stat-avg-distance"><?php echo $avg_distance; ?> <span style="font-size: 1rem;">cm</span></div>
+                    <h3>Estado del Cajón</h3>
+                    <div class="stat-number" id="stat-current-state" style="font-size: 1.35rem;">
+                        <?php echo $latest_reading ? htmlspecialchars($latest_reading['estado']) : 'Sin datos'; ?>
+                    </div>
                 </div>
             </div>
             
@@ -749,18 +809,68 @@ try {
                     <i class="fa-solid fa-bell"></i>
                 </div>
                 <div class="stat-info">
-                    <h3>Eventos de Alerta</h3>
-                    <div class="stat-number" style="color: var(--color-warning);" id="stat-warn-count"><?php echo $warn_count; ?></div>
+                    <h3>Alerta Sonora</h3>
+                    <div class="stat-number" id="stat-current-buzzer" style="font-size: 1.35rem;">
+                        <?php echo $latest_reading ? ($latest_reading['frecuencia_buzzer'] > 0 ? 'Activada' : 'Inactiva') : '-'; ?>
+                    </div>
                 </div>
             </div>
             
             <div class="stat-card">
                 <div class="stat-icon">
-                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <i class="fa-solid fa-database"></i>
                 </div>
                 <div class="stat-info">
-                    <h3>Alertas Críticas</h3>
-                    <div class="stat-number" style="color: var(--color-danger);" id="stat-critical-count"><?php echo $critical_count; ?></div>
+                    <h3>Total de Lecturas</h3>
+                    <div class="stat-number" id="stat-total-records"><?php echo $total_records; ?></div>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <i class="fa-solid fa-car"></i>
+                </div>
+                <div class="stat-info">
+                    <h3>Total Espacios Ocupados</h3>
+                    <div class="stat-number" id="stat-total-ocupados" style="color: var(--color-danger);">
+                        <?php
+                        $ocupados_count = $pdo->query("SELECT COUNT(*) FROM parking_logs WHERE estado = 'Ocupado'")->fetchColumn();
+                        echo $ocupados_count;
+                        ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Section -->
+        <div class="charts-section">
+            <div class="charts-grid">
+                <div class="chart-card full-width">
+                    <h3>Historial de Distancia por Horas</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="chart-distance"></canvas>
+                    </div>
+                </div>
+
+                <div class="chart-card">
+                    <h3>Estados del Cajón</h3>
+                    <div class="chart-wrapper small">
+                        <canvas id="chart-estados"></canvas>
+                    </div>
+                </div>
+
+                <div class="chart-card">
+                    <h3>Frecuencia de Alertas Sonoras</h3>
+                    <div class="chart-wrapper small">
+                        <canvas id="chart-buzzer"></canvas>
+                    </div>
+                </div>
+
+                <div class="chart-card">
+                    <h3>Porcentaje de Ocupación</h3>
+                    <div class="chart-wrapper small">
+                        <canvas id="chart-ocupacion"></canvas>
+                    </div>
                 </div>
             </div>
         </div>
@@ -768,7 +878,7 @@ try {
         <!-- Historical logs table -->
         <div class="log-section">
             <div class="table-header">
-                <h2>Historial de Mediciones</h2>
+                <h2>Últimas 5 Lecturas</h2>
                 <div class="controls">
                     <button onclick="setFilter('all')" class="filter-btn <?php echo $filter_status === 'all' ? 'active' : ''; ?>" id="btn-filter-all">Todos</button>
                     <button onclick="setFilter('Libre')" class="filter-btn <?php echo $filter_status === 'Libre' ? 'active' : ''; ?>" id="btn-filter-Libre">Libre</button>
@@ -855,6 +965,202 @@ try {
     <script>
         let currentFilter = '<?php echo $filter_status; ?>';
         let updateInterval;
+        const charts = {};
+        const chartColors = {
+            libre: '#10b981',
+            acercandose: '#f59e0b',
+            ocupado: '#ef4444',
+            primary: '#3b82f6',
+            grid: 'rgba(255, 255, 255, 0.08)',
+            text: '#94a3b8'
+        };
+
+        function commonChartOptions() {
+            return {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: { color: chartColors.text, font: { family: "'Plus Jakarta Sans', sans-serif", size: 12 } }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: chartColors.grid },
+                        ticks: { color: chartColors.text, font: { family: "'Plus Jakarta Sans', sans-serif", size: 11 } }
+                    },
+                    y: {
+                        grid: { color: chartColors.grid },
+                        ticks: { color: chartColors.text, font: { family: "'Plus Jakarta Sans', sans-serif", size: 11 } }
+                    }
+                }
+            };
+        }
+
+        function initCharts() {
+            Chart.defaults.color = chartColors.text;
+            Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
+
+            // 1. Distance history line chart
+            const ctxDistance = document.getElementById('chart-distance');
+            if (ctxDistance) {
+                charts.distance = new Chart(ctxDistance, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Distancia (cm)',
+                            data: [],
+                            borderColor: chartColors.primary,
+                            backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 3,
+                            pointBackgroundColor: chartColors.primary
+                        }]
+                    },
+                    options: {
+                        ...commonChartOptions(),
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: commonChartOptions().scales.x,
+                            y: { ...commonChartOptions().scales.y, beginAtZero: true, title: { display: true, text: 'cm', color: chartColors.text } }
+                        }
+                    }
+                });
+            }
+
+            // 2. Estado distribution doughnut
+            const ctxEstados = document.getElementById('chart-estados');
+            if (ctxEstados) {
+                charts.estados = new Chart(ctxEstados, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Libre', 'Acercándose', 'Ocupado'],
+                        datasets: [{
+                            data: [0, 0, 0],
+                            backgroundColor: [chartColors.libre, chartColors.acercandose, chartColors.ocupado],
+                            borderWidth: 0,
+                            hoverOffset: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'right', labels: { color: chartColors.text, font: { size: 12 } } }
+                        }
+                    }
+                });
+            }
+
+            // 3. Buzzer frequency bar chart
+            const ctxBuzzer = document.getElementById('chart-buzzer');
+            if (ctxBuzzer) {
+                charts.buzzer = new Chart(ctxBuzzer, {
+                    type: 'bar',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Lecturas',
+                            data: [],
+                            backgroundColor: [chartColors.libre, chartColors.acercandose, chartColors.ocupado],
+                            borderRadius: 8,
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        ...commonChartOptions(),
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: commonChartOptions().scales.x,
+                            y: { ...commonChartOptions().scales.y, beginAtZero: true, ticks: { stepSize: 1, color: chartColors.text } }
+                        }
+                    }
+                });
+            }
+
+            // 4. Occupancy percentage doughnut
+            const ctxOcupacion = document.getElementById('chart-ocupacion');
+            if (ctxOcupacion) {
+                charts.ocupacion = new Chart(ctxOcupacion, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Ocupado', 'Disponible'],
+                        datasets: [{
+                            data: [0, 100],
+                            backgroundColor: [chartColors.ocupado, 'rgba(148, 163, 184, 0.2)'],
+                            borderWidth: 0,
+                            hoverOffset: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'right', labels: { color: chartColors.text, font: { size: 12 } } },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.label + ': ' + context.raw + '%';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        async function updateCharts() {
+            try {
+                const response = await fetch('charts.php');
+                if (!response.ok) throw new Error('Chart fetch failed');
+                const chartData = await response.json();
+                if (chartData.status !== 'success') return;
+
+                // Update distance history
+                if (charts.distance && chartData.distance_history) {
+                    charts.distance.data.labels = chartData.distance_history.map(p => p.hora);
+                    charts.distance.data.datasets[0].data = chartData.distance_history.map(p => p.distancia);
+                    charts.distance.update();
+                }
+
+                // Update estado distribution
+                if (charts.estados && chartData.estado_distribution) {
+                    const ed = chartData.estado_distribution;
+                    charts.estados.data.datasets[0].data = [
+                        ed['Libre'] || 0,
+                        ed['Acercandose'] || 0,
+                        ed['Ocupado'] || 0
+                    ];
+                    charts.estados.update();
+                }
+
+                // Update buzzer frequency
+                if (charts.buzzer && chartData.buzzer_distribution) {
+                    const labels = Object.keys(chartData.buzzer_distribution);
+                    const values = Object.values(chartData.buzzer_distribution);
+                    charts.buzzer.data.labels = labels;
+                    charts.buzzer.data.datasets[0].data = values;
+                    charts.buzzer.data.datasets[0].backgroundColor = labels.map(l => {
+                        if (l === 'Inactivo') return chartColors.libre;
+                        if (l === '1000 Hz') return chartColors.acercandose;
+                        return chartColors.ocupado;
+                    });
+                    charts.buzzer.update();
+                }
+
+                // Update occupancy
+                if (charts.ocupacion && chartData.ocupacion) {
+                    const oc = chartData.ocupacion;
+                    charts.ocupacion.data.datasets[0].data = [oc.porcentaje, 100 - oc.porcentaje];
+                    charts.ocupacion.update();
+                }
+            } catch (err) {
+                console.error('Error updating charts:', err);
+            }
+        }
 
         function setFilter(filter) {
             currentFilter = filter;
@@ -878,11 +1184,18 @@ try {
                 const data = await response.json();
                 if (data.status === 'success') {
                     // 1. Update Metrics Cards
+                    if (data.latest_reading) {
+                        document.getElementById('stat-current-distance').innerHTML = `${data.latest_reading.distance.toFixed(1)} <span style="font-size: 1rem; font-weight: 500;">cm</span>`;
+                        document.getElementById('stat-current-state').innerText = data.latest_reading.estado;
+                        document.getElementById('stat-current-buzzer').innerText = data.latest_reading.frecuencia_buzzer > 0 ? 'Activada' : 'Inactiva';
+                    } else {
+                        document.getElementById('stat-current-distance').innerText = '0.0';
+                        document.getElementById('stat-current-state').innerText = 'Sin datos';
+                        document.getElementById('stat-current-buzzer').innerText = '-';
+                    }
                     document.getElementById('stat-total-records').innerText = data.total_records;
-                    document.getElementById('stat-avg-distance').innerHTML = `${data.avg_distance} <span style="font-size: 1rem;">cm</span>`;
-                    document.getElementById('stat-warn-count').innerText = data.warn_count;
-                    document.getElementById('stat-critical-count').innerText = data.critical_count;
-                    
+                    document.getElementById('stat-total-ocupados').innerText = data.ocupados_count;
+
                     // 2. Update Latest Status Card
                     const statusContainer = document.getElementById('current-status-container');
                     const timeEl = document.getElementById('latest-reading-time');
@@ -1028,8 +1341,13 @@ try {
 
         // Initialize polling when the page loads
         document.addEventListener('DOMContentLoaded', () => {
+            initCharts();
+            updateCharts();
             // Poll data every 2 seconds (2000 ms)
-            updateInterval = setInterval(updateDashboard, 2000);
+            updateInterval = setInterval(() => {
+                updateDashboard();
+                updateCharts();
+            }, 2000);
             console.log("Real-time polling started (every 2s)");
         });
     </script>
